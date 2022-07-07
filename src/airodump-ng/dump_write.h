@@ -35,6 +35,11 @@
 int dump_write_csv(struct AP_info * ap_1st,
 				   struct ST_info * st_1st,
 				   unsigned int f_encrypt);
+				   
+int dump_write_continuously(struct AP_info * ap_1st,
+				   struct ST_info * st_1st,
+				   unsigned int f_encrypt);
+
 int dump_write_airodump_ng_logcsv_add_ap(const struct AP_info * ap_cur,
 										 const int32_t ri_power,
 										 struct tm * tm_gpstime,

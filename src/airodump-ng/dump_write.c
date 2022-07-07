@@ -408,6 +408,314 @@ int dump_write_csv(struct AP_info * ap_1st,
 	return (0);
 }
 
+int dump_write_continuously(struct AP_info * ap_1st,
+				   struct ST_info * st_1st,
+				   unsigned int f_encrypt)
+{
+
+	static bool first = true;
+	static struct timeval max_ltime;
+
+	if (first) {
+		printf("\r\nBSSID, First time seen, Last time seen, Last time SEC, Last time USEC, channel, Speed, "
+			"Privacy, Cipher, Authentication, Power, # beacons, # IV, LAN IP, "
+			"ID-length, ESSID, Key\r\n");
+		first = false;
+	}
+	
+	int i;
+	//int probes_written;
+	struct timeval last_max_ltime = max_ltime;
+	struct tm * ltime;
+	struct AP_info * ap_cur;
+	//struct ST_info * st_cur;
+	char * temp;
+
+	//if (!opt.record_data || !opt.output_format_csv) return (0);
+
+	//fseek(opt.f_txt, 0, SEEK_SET);
+
+	//printf("");
+
+
+	ap_cur = ap_1st;
+
+	while (ap_cur != NULL)
+	{
+		if (memcmp(ap_cur->bssid, BROADCAST, 6) == 0)
+		{
+			ap_cur = ap_cur->next;
+			continue;
+		}
+
+		if (ap_cur->security != 0 && f_encrypt != 0
+			&& ((ap_cur->security & f_encrypt) == 0))
+		{
+			ap_cur = ap_cur->next;
+			continue;
+		}
+
+		if (is_filtered_essid(ap_cur->essid))
+		{
+			ap_cur = ap_cur->next;
+			continue;
+		}
+
+		if (!timercmp(&ap_cur->ftimel, &last_max_ltime, >))
+		{
+			ap_cur = ap_cur->next;
+			continue;
+		}
+
+		if (timercmp(&ap_cur->ftimel, &max_ltime, >)) 
+		{
+			max_ltime = ap_cur->ftimel;
+		}
+
+		printf(
+				"%02X:%02X:%02X:%02X:%02X:%02X, ",
+				ap_cur->bssid[0],
+				ap_cur->bssid[1],
+				ap_cur->bssid[2],
+				ap_cur->bssid[3],
+				ap_cur->bssid[4],
+				ap_cur->bssid[5]);
+
+		ltime = localtime(&ap_cur->tinit);
+		REQUIRE(ltime != NULL);
+
+		printf(
+				"%04d-%02d-%02d %02d:%02d:%02d, ",
+				1900 + ltime->tm_year,
+				1 + ltime->tm_mon,
+				ltime->tm_mday,
+				ltime->tm_hour,
+				ltime->tm_min,
+				ltime->tm_sec);
+
+		ltime = localtime(&ap_cur->tlast);
+		REQUIRE(ltime != NULL);
+
+		printf(
+				"%04d-%02d-%02d %02d:%02d:%02d, ",
+				1900 + ltime->tm_year,
+				1 + ltime->tm_mon,
+				ltime->tm_mday,
+				ltime->tm_hour,
+				ltime->tm_min,
+				ltime->tm_sec);
+
+
+		printf( "%9ld, %6ld, ", ap_cur->ftimel.tv_sec, ap_cur->ftimel.tv_usec );
+
+		printf( "%2d, %3d,", ap_cur->channel, ap_cur->max_speed);
+
+		if ((ap_cur->security
+			 & (STD_OPN | STD_WEP | STD_WPA | STD_WPA2 | AUTH_SAE | AUTH_OWE))
+			== 0)
+			printf( " ");
+		else
+		{
+			if (ap_cur->security & STD_WPA2)
+			{
+				if (ap_cur->security & AUTH_SAE || ap_cur->security & AUTH_OWE)
+					printf( " WPA3");
+				printf( " WPA2");
+			}
+			if (ap_cur->security & STD_WPA) printf( " WPA");
+			if (ap_cur->security & STD_WEP) printf( " WEP");
+			if (ap_cur->security & STD_OPN) printf( " OPN");
+		}
+
+		printf( ",");
+
+		if ((ap_cur->security & ENC_FIELD) == 0)
+			printf( " ");
+		else
+		{
+			if (ap_cur->security & ENC_CCMP) printf( " CCMP");
+			if (ap_cur->security & ENC_WRAP) printf( " WRAP");
+			if (ap_cur->security & ENC_TKIP) printf( " TKIP");
+			if (ap_cur->security & ENC_WEP104) printf( " WEP104");
+			if (ap_cur->security & ENC_WEP40) printf( " WEP40");
+			if (ap_cur->security & ENC_WEP) printf( " WEP");
+			if (ap_cur->security & ENC_GCMP) printf( " GCMP");
+			if (ap_cur->security & ENC_GMAC) printf( " GMAC");
+		}
+
+		printf( ",");
+
+		if ((ap_cur->security & AUTH_FIELD) == 0)
+			printf( "   ");
+		else
+		{
+			if (ap_cur->security & AUTH_SAE) printf( " SAE");
+			if (ap_cur->security & AUTH_MGT) printf( " MGT");
+			if (ap_cur->security & AUTH_CMAC) printf( " CMAC");
+			if (ap_cur->security & AUTH_PSK)
+			{
+				if (ap_cur->security & STD_WEP)
+					printf( " SKA");
+				else
+					printf( " PSK");
+			}
+			if (ap_cur->security & AUTH_OWE) printf( " OWE");
+			if (ap_cur->security & AUTH_OPN) printf( " OPN");
+		}
+
+		printf(
+				", %3d, %8lu, %8lu, ",
+				ap_cur->avg_power,
+				ap_cur->nb_bcn,
+				ap_cur->nb_data);
+
+		printf(
+				"%3d.%3d.%3d.%3d, ",
+				ap_cur->lanip[0],
+				ap_cur->lanip[1],
+				ap_cur->lanip[2],
+				ap_cur->lanip[3]);
+
+		printf( "%3d, ", ap_cur->ssid_length);
+
+		if (verifyssid(ap_cur->essid))
+			printf( "%s, ", ap_cur->essid);
+		else
+		{
+			temp = format_text_for_csv(ap_cur->essid,
+									   (size_t) ap_cur->ssid_length);
+			if (temp != NULL) //-V547
+			{
+				printf( "%s, ", temp);
+				free(temp);
+			}
+		}
+
+		if (ap_cur->key != NULL)
+		{
+			const int key_len = strlen(ap_cur->key);
+
+			for (i = 0; i < key_len; i++)
+			{
+				printf( "%02X", ap_cur->key[i]);
+				if (i < (key_len - 1)) printf( ":");
+			}
+		}
+
+		printf( "\r\n");
+
+		ap_cur = ap_cur->next;
+	}
+
+	/*printf(
+			"\r\nStation MAC, First time seen, Last time seen, "
+			"Power, # packets, BSSID, Probed ESSIDs\r\n");
+
+	st_cur = st_1st;
+
+	while (st_cur != NULL)
+	{
+		ap_cur = st_cur->base;
+
+		if (ap_cur->nb_pkt < 2)
+		{
+			st_cur = st_cur->next;
+			continue;
+		}
+
+		printf(
+				"%02X:%02X:%02X:%02X:%02X:%02X, ",
+				st_cur->stmac[0],
+				st_cur->stmac[1],
+				st_cur->stmac[2],
+				st_cur->stmac[3],
+				st_cur->stmac[4],
+				st_cur->stmac[5]);
+
+		ltime = localtime(&st_cur->tinit);
+		REQUIRE(ltime != NULL);
+
+		printf(
+				"%04d-%02d-%02d %02d:%02d:%02d, ",
+				1900 + ltime->tm_year,
+				1 + ltime->tm_mon,
+				ltime->tm_mday,
+				ltime->tm_hour,
+				ltime->tm_min,
+				ltime->tm_sec);
+
+		ltime = localtime(&st_cur->tlast);
+		REQUIRE(ltime != NULL);
+
+		printf(
+				"%04d-%02d-%02d %02d:%02d:%02d, ",
+				1900 + ltime->tm_year,
+				1 + ltime->tm_mon,
+				ltime->tm_mday,
+				ltime->tm_hour,
+				ltime->tm_min,
+				ltime->tm_sec);
+
+		printf( "%3d, %8lu, ", st_cur->power, st_cur->nb_pkt);
+
+		if (!memcmp(ap_cur->bssid, BROADCAST, 6))
+			printf( "(not associated) ,");
+		else
+			printf(
+					"%02X:%02X:%02X:%02X:%02X:%02X,",
+					ap_cur->bssid[0],
+					ap_cur->bssid[1],
+					ap_cur->bssid[2],
+					ap_cur->bssid[3],
+					ap_cur->bssid[4],
+					ap_cur->bssid[5]);
+
+		probes_written = 0;
+		for (i = 0; i < NB_PRB; i++)
+		{
+			if (st_cur->ssid_length[i] == 0) continue;
+
+			if (verifyssid((const unsigned char *) st_cur->probes[i]))
+			{
+				temp = (char *) calloc(
+					1, (st_cur->ssid_length[i] + 1) * sizeof(char));
+				ALLEGE(temp != NULL);
+				memcpy(temp, st_cur->probes[i], st_cur->ssid_length[i] + 1u);
+			}
+			else
+			{
+				temp = format_text_for_csv((unsigned char *) st_cur->probes[i],
+										   (size_t) st_cur->ssid_length[i]);
+				ALLEGE(temp != NULL); //-V547
+			}
+
+			if (probes_written == 0)
+			{
+				printf( "%s", temp);
+				probes_written = 1;
+			}
+			else
+			{
+				printf( ",%s", temp);
+			}
+
+			free(temp);
+		}
+
+		printf( "\r\n");
+
+		st_cur = st_cur->next;
+	}
+
+	printf( "\r\n");
+	fflush(opt.f_txt);
+	*/
+
+	fflush(stdout);
+
+	return (0);
+}
+
 int dump_write_airodump_ng_logcsv_add_ap(const struct AP_info * ap_cur,
 										 const int32_t ri_power,
 										 struct tm * tm_gpstime,

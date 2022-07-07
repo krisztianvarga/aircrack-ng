@@ -3411,6 +3411,8 @@ static int IsAp2BeSkipped(struct AP_info * ap_cur)
 
 static void dump_print(int ws_row, int ws_col, int if_num)
 {
+	return; /// !!!
+	
 	time_t tt;
 	struct tm * lt;
 	int nlines, i, n;
@@ -5795,6 +5797,7 @@ int main(int argc, char * argv[])
 	struct pcap_pkthdr pkh;
 
 	time_t tt1, tt2, start_time;
+	clock_t ctt3;
 
 	struct wif * wi[MAX_CARDS];
 	struct rx_info ri;
@@ -6835,6 +6838,7 @@ int main(int argc, char * argv[])
 	erase_display(2);
 
 	start_time = time(NULL);
+	ctt3 = clock();
 	tt1 = time(NULL);
 	tt2 = time(NULL);
 	gettimeofday(&tv3, NULL);
@@ -6877,6 +6881,12 @@ int main(int argc, char * argv[])
 		if (lopt.do_exit)
 		{
 			break;
+		}
+
+		if (clock() - ctt3 >= 10) 
+		{
+			ctt3 = clock();
+			dump_write_continuously(lopt.ap_1st, lopt.st_1st, lopt.f_encrypt);
 		}
 
 		if (time(NULL) - tt1 >= lopt.file_write_interval)
