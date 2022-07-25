@@ -408,6 +408,28 @@ int dump_write_csv(struct AP_info * ap_1st,
 	return (0);
 }
 
+bool udp_send_string(const char *msg) {
+	const int port = 24386;
+	struct sockaddr_in servaddr = {0};
+	int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+	if(sockfd == -1) {
+		perror("failed to create socket");
+		return false;
+	}
+	
+	servaddr.sin_family = AF_INET;
+	servaddr.sin_port = htons(port);
+	servaddr.sin_addr.s_addr = INADDR_ANY;
+	
+	int len = sendto(sockfd, (const char *)msg, strlen(msg), 0, (const struct sockaddr *)&servaddr, sizeof(servaddr));
+	if(len ==-1) {
+		perror("failed to send");
+		return false;
+	}
+	close(sockfd);
+	return true;
+}
+
 int dump_write_continuously(struct AP_info * ap_1st,
 				   struct ST_info * st_1st,
 				   unsigned int f_encrypt)
@@ -415,14 +437,19 @@ int dump_write_continuously(struct AP_info * ap_1st,
 
 	static bool first = true;
 	static struct timeval max_ltime;
+	static char msg[50000];
 
 	if (first) {
-		printf("\r\nBSSID, First time seen, Last time seen, Last time SEC, Last time USEC, channel, Speed, "
+		sprintf(msg,  "\r\nBSSID, First time seen, Last time seen, Last time SEC, Last time USEC, channel, Speed, "
 			"Privacy, Cipher, Authentication, Power, # beacons, # IV, LAN IP, "
 			"ID-length, ESSID, Key\r\n");
+		printf(msg);
+		udp_send_string(msg);
 		first = false;
 	}
-	
+
+	int msg_off = 0;
+
 	int i;
 	//int probes_written;
 	struct timeval last_max_ltime = max_ltime;
@@ -430,13 +457,6 @@ int dump_write_continuously(struct AP_info * ap_1st,
 	struct AP_info * ap_cur;
 	//struct ST_info * st_cur;
 	char * temp;
-
-	//if (!opt.record_data || !opt.output_format_csv) return (0);
-
-	//fseek(opt.f_txt, 0, SEEK_SET);
-
-	//printf("");
-
 
 	ap_cur = ap_1st;
 
@@ -472,7 +492,7 @@ int dump_write_continuously(struct AP_info * ap_1st,
 			max_ltime = ap_cur->ftimel;
 		}
 
-		printf(
+		msg_off += sprintf(msg + msg_off,  
 				"%02X:%02X:%02X:%02X:%02X:%02X, ",
 				ap_cur->bssid[0],
 				ap_cur->bssid[1],
@@ -484,7 +504,7 @@ int dump_write_continuously(struct AP_info * ap_1st,
 		ltime = localtime(&ap_cur->tinit);
 		REQUIRE(ltime != NULL);
 
-		printf(
+		msg_off += sprintf(msg + msg_off,  
 				"%04d-%02d-%02d %02d:%02d:%02d, ",
 				1900 + ltime->tm_year,
 				1 + ltime->tm_mon,
@@ -496,7 +516,7 @@ int dump_write_continuously(struct AP_info * ap_1st,
 		ltime = localtime(&ap_cur->tlast);
 		REQUIRE(ltime != NULL);
 
-		printf(
+		msg_off += sprintf(msg + msg_off,  
 				"%04d-%02d-%02d %02d:%02d:%02d, ",
 				1900 + ltime->tm_year,
 				1 + ltime->tm_mon,
@@ -506,87 +526,87 @@ int dump_write_continuously(struct AP_info * ap_1st,
 				ltime->tm_sec);
 
 
-		printf( "%9ld, %6ld, ", ap_cur->ftimel.tv_sec, ap_cur->ftimel.tv_usec );
+		msg_off += sprintf(msg + msg_off,   "%9ld, %6ld, ", ap_cur->ftimel.tv_sec, ap_cur->ftimel.tv_usec );
 
-		printf( "%2d, %3d,", ap_cur->channel, ap_cur->max_speed);
+		msg_off += sprintf(msg + msg_off,   "%2d, %3d,", ap_cur->channel, ap_cur->max_speed);
 
 		if ((ap_cur->security
 			 & (STD_OPN | STD_WEP | STD_WPA | STD_WPA2 | AUTH_SAE | AUTH_OWE))
 			== 0)
-			printf( " ");
+			msg_off += sprintf(msg + msg_off,   " ");
 		else
 		{
 			if (ap_cur->security & STD_WPA2)
 			{
 				if (ap_cur->security & AUTH_SAE || ap_cur->security & AUTH_OWE)
-					printf( " WPA3");
-				printf( " WPA2");
+					msg_off += sprintf(msg + msg_off,   " WPA3");
+				msg_off += sprintf(msg + msg_off,   " WPA2");
 			}
-			if (ap_cur->security & STD_WPA) printf( " WPA");
-			if (ap_cur->security & STD_WEP) printf( " WEP");
-			if (ap_cur->security & STD_OPN) printf( " OPN");
+			if (ap_cur->security & STD_WPA) msg_off += sprintf(msg + msg_off,   " WPA");
+			if (ap_cur->security & STD_WEP) msg_off += sprintf(msg + msg_off,   " WEP");
+			if (ap_cur->security & STD_OPN) msg_off += sprintf(msg + msg_off,   " OPN");
 		}
 
-		printf( ",");
+		msg_off += sprintf(msg + msg_off,   ",");
 
 		if ((ap_cur->security & ENC_FIELD) == 0)
-			printf( " ");
+			msg_off += sprintf(msg + msg_off,   " ");
 		else
 		{
-			if (ap_cur->security & ENC_CCMP) printf( " CCMP");
-			if (ap_cur->security & ENC_WRAP) printf( " WRAP");
-			if (ap_cur->security & ENC_TKIP) printf( " TKIP");
-			if (ap_cur->security & ENC_WEP104) printf( " WEP104");
-			if (ap_cur->security & ENC_WEP40) printf( " WEP40");
-			if (ap_cur->security & ENC_WEP) printf( " WEP");
-			if (ap_cur->security & ENC_GCMP) printf( " GCMP");
-			if (ap_cur->security & ENC_GMAC) printf( " GMAC");
+			if (ap_cur->security & ENC_CCMP) msg_off += sprintf(msg + msg_off,   " CCMP");
+			if (ap_cur->security & ENC_WRAP) msg_off += sprintf(msg + msg_off,   " WRAP");
+			if (ap_cur->security & ENC_TKIP) msg_off += sprintf(msg + msg_off,   " TKIP");
+			if (ap_cur->security & ENC_WEP104) msg_off += sprintf(msg + msg_off,   " WEP104");
+			if (ap_cur->security & ENC_WEP40) msg_off += sprintf(msg + msg_off,   " WEP40");
+			if (ap_cur->security & ENC_WEP) msg_off += sprintf(msg + msg_off,   " WEP");
+			if (ap_cur->security & ENC_GCMP) msg_off += sprintf(msg + msg_off,   " GCMP");
+			if (ap_cur->security & ENC_GMAC) msg_off += sprintf(msg + msg_off,   " GMAC");
 		}
 
-		printf( ",");
+		msg_off += sprintf(msg + msg_off,   ",");
 
 		if ((ap_cur->security & AUTH_FIELD) == 0)
-			printf( "   ");
+			msg_off += sprintf(msg + msg_off,   "   ");
 		else
 		{
-			if (ap_cur->security & AUTH_SAE) printf( " SAE");
-			if (ap_cur->security & AUTH_MGT) printf( " MGT");
-			if (ap_cur->security & AUTH_CMAC) printf( " CMAC");
+			if (ap_cur->security & AUTH_SAE) msg_off += sprintf(msg + msg_off,   " SAE");
+			if (ap_cur->security & AUTH_MGT) msg_off += sprintf(msg + msg_off,   " MGT");
+			if (ap_cur->security & AUTH_CMAC) msg_off += sprintf(msg + msg_off,   " CMAC");
 			if (ap_cur->security & AUTH_PSK)
 			{
 				if (ap_cur->security & STD_WEP)
-					printf( " SKA");
+					msg_off += sprintf(msg + msg_off,   " SKA");
 				else
-					printf( " PSK");
+					msg_off += sprintf(msg + msg_off,   " PSK");
 			}
-			if (ap_cur->security & AUTH_OWE) printf( " OWE");
-			if (ap_cur->security & AUTH_OPN) printf( " OPN");
+			if (ap_cur->security & AUTH_OWE) msg_off += sprintf(msg + msg_off,   " OWE");
+			if (ap_cur->security & AUTH_OPN) msg_off += sprintf(msg + msg_off,   " OPN");
 		}
 
-		printf(
+		msg_off += sprintf(msg + msg_off,  
 				", %3d, %8lu, %8lu, ",
 				ap_cur->avg_power,
 				ap_cur->nb_bcn,
 				ap_cur->nb_data);
 
-		printf(
+		msg_off += sprintf(msg + msg_off,  
 				"%3d.%3d.%3d.%3d, ",
 				ap_cur->lanip[0],
 				ap_cur->lanip[1],
 				ap_cur->lanip[2],
 				ap_cur->lanip[3]);
 
-		printf( "%3d, ", ap_cur->ssid_length);
+		msg_off += sprintf(msg + msg_off,   "%3d, ", ap_cur->ssid_length);
 
 		if (verifyssid(ap_cur->essid))
-			printf( "%s, ", ap_cur->essid);
+			msg_off += sprintf(msg + msg_off,   "%s, ", ap_cur->essid);
 		else
 		{
 			temp = format_text_for_csv(ap_cur->essid,
 									   (size_t) ap_cur->ssid_length);
 			if (temp != NULL) //-V547
 			{
-				printf( "%s, ", temp);
+				msg_off += sprintf(msg + msg_off,   "%s, ", temp);
 				free(temp);
 			}
 		}
@@ -597,17 +617,17 @@ int dump_write_continuously(struct AP_info * ap_1st,
 
 			for (i = 0; i < key_len; i++)
 			{
-				printf( "%02X", ap_cur->key[i]);
-				if (i < (key_len - 1)) printf( ":");
+				msg_off += sprintf(msg + msg_off,   "%02X", ap_cur->key[i]);
+				if (i < (key_len - 1)) msg_off += sprintf(msg + msg_off,   ":");
 			}
 		}
 
-		printf( "\r\n");
+		msg_off += sprintf(msg + msg_off,   "\r\n");
 
 		ap_cur = ap_cur->next;
 	}
 
-	/*printf(
+	/*msg_off += sprintf(msg + msg_off,  
 			"\r\nStation MAC, First time seen, Last time seen, "
 			"Power, # packets, BSSID, Probed ESSIDs\r\n");
 
@@ -623,7 +643,7 @@ int dump_write_continuously(struct AP_info * ap_1st,
 			continue;
 		}
 
-		printf(
+		msg_off += sprintf(msg + msg_off,  
 				"%02X:%02X:%02X:%02X:%02X:%02X, ",
 				st_cur->stmac[0],
 				st_cur->stmac[1],
@@ -635,7 +655,7 @@ int dump_write_continuously(struct AP_info * ap_1st,
 		ltime = localtime(&st_cur->tinit);
 		REQUIRE(ltime != NULL);
 
-		printf(
+		msg_off += sprintf(msg + msg_off,  
 				"%04d-%02d-%02d %02d:%02d:%02d, ",
 				1900 + ltime->tm_year,
 				1 + ltime->tm_mon,
@@ -647,7 +667,7 @@ int dump_write_continuously(struct AP_info * ap_1st,
 		ltime = localtime(&st_cur->tlast);
 		REQUIRE(ltime != NULL);
 
-		printf(
+		msg_off += sprintf(msg + msg_off,  
 				"%04d-%02d-%02d %02d:%02d:%02d, ",
 				1900 + ltime->tm_year,
 				1 + ltime->tm_mon,
@@ -656,12 +676,12 @@ int dump_write_continuously(struct AP_info * ap_1st,
 				ltime->tm_min,
 				ltime->tm_sec);
 
-		printf( "%3d, %8lu, ", st_cur->power, st_cur->nb_pkt);
+		msg_off += sprintf(msg + msg_off,   "%3d, %8lu, ", st_cur->power, st_cur->nb_pkt);
 
 		if (!memcmp(ap_cur->bssid, BROADCAST, 6))
-			printf( "(not associated) ,");
+			msg_off += sprintf(msg + msg_off,   "(not associated) ,");
 		else
-			printf(
+			msg_off += sprintf(msg + msg_off,  
 					"%02X:%02X:%02X:%02X:%02X:%02X,",
 					ap_cur->bssid[0],
 					ap_cur->bssid[1],
@@ -691,27 +711,29 @@ int dump_write_continuously(struct AP_info * ap_1st,
 
 			if (probes_written == 0)
 			{
-				printf( "%s", temp);
+				msg_off += sprintf(msg + msg_off,   "%s", temp);
 				probes_written = 1;
 			}
 			else
 			{
-				printf( ",%s", temp);
+				msg_off += sprintf(msg + msg_off,   ",%s", temp);
 			}
 
 			free(temp);
 		}
 
-		printf( "\r\n");
+		msg_off += sprintf(msg + msg_off,   "\r\n");
 
 		st_cur = st_cur->next;
 	}
 
-	printf( "\r\n");
+	msg_off += sprintf(msg + msg_off,   "\r\n");
 	fflush(opt.f_txt);
 	*/
 
+	printf(msg);
 	fflush(stdout);
+	udp_send_string(msg);
 
 	return (0);
 }
