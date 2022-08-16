@@ -435,27 +435,13 @@ int dump_write_continuously(struct AP_info * ap_1st,
 				   unsigned int f_encrypt)
 {
 
-	static bool first = true;
 	static struct timeval max_ltime;
 	static char msg[50000];
 
-	if (first) {
-		sprintf(msg,  "\r\nBSSID, First time seen, Last time seen, Last time SEC, Last time USEC, channel, Speed, "
-			"Privacy, Cipher, Authentication, Power, # beacons, # IV, LAN IP, "
-			"ID-length, ESSID, Key\r\n");
-		printf(msg);
-		udp_send_string(msg);
-		first = false;
-	}
-
-	int msg_off = 0;
-
 	int i;
-	//int probes_written;
 	struct timeval last_max_ltime = max_ltime;
 	struct tm * ltime;
 	struct AP_info * ap_cur;
-	//struct ST_info * st_cur;
 	char * temp;
 
 	ap_cur = ap_1st;
@@ -492,8 +478,15 @@ int dump_write_continuously(struct AP_info * ap_1st,
 			max_ltime = ap_cur->ftimel;
 		}
 
+		int msg_off = 0;
+		msg_off += sprintf(msg + msg_off, "{\"type\": \"airodump\", ");
+
+		// Last time SEC/USEC
+		msg_off += sprintf(msg + msg_off, "\"ts\": %ld.%ld, ", ap_cur->ftimel.tv_sec, ap_cur->ftimel.tv_usec );
+
+		// BSSID
 		msg_off += sprintf(msg + msg_off,  
-				"%02X:%02X:%02X:%02X:%02X:%02X, ",
+				"\"bssid\": \"%02X:%02X:%02X:%02X:%02X:%02X\", ",
 				ap_cur->bssid[0],
 				ap_cur->bssid[1],
 				ap_cur->bssid[2],
@@ -501,239 +494,33 @@ int dump_write_continuously(struct AP_info * ap_1st,
 				ap_cur->bssid[4],
 				ap_cur->bssid[5]);
 
-		ltime = localtime(&ap_cur->tinit);
-		REQUIRE(ltime != NULL);
+		// Channel, Speed 
+		msg_off += sprintf(msg + msg_off, "\"channel\": %d, \"speed\": %d, ", ap_cur->channel, ap_cur->max_speed);
 
-		msg_off += sprintf(msg + msg_off,  
-				"%04d-%02d-%02d %02d:%02d:%02d, ",
-				1900 + ltime->tm_year,
-				1 + ltime->tm_mon,
-				ltime->tm_mday,
-				ltime->tm_hour,
-				ltime->tm_min,
-				ltime->tm_sec);
+		// Power
+		msg_off += sprintf(msg + msg_off,  "\"power\": %d, ", ap_cur->avg_power);
 
-		ltime = localtime(&ap_cur->tlast);
-		REQUIRE(ltime != NULL);
-
-		msg_off += sprintf(msg + msg_off,  
-				"%04d-%02d-%02d %02d:%02d:%02d, ",
-				1900 + ltime->tm_year,
-				1 + ltime->tm_mon,
-				ltime->tm_mday,
-				ltime->tm_hour,
-				ltime->tm_min,
-				ltime->tm_sec);
-
-
-		msg_off += sprintf(msg + msg_off,   "%9ld, %6ld, ", ap_cur->ftimel.tv_sec, ap_cur->ftimel.tv_usec );
-
-		msg_off += sprintf(msg + msg_off,   "%2d, %3d,", ap_cur->channel, ap_cur->max_speed);
-
-		if ((ap_cur->security
-			 & (STD_OPN | STD_WEP | STD_WPA | STD_WPA2 | AUTH_SAE | AUTH_OWE))
-			== 0)
-			msg_off += sprintf(msg + msg_off,   " ");
-		else
-		{
-			if (ap_cur->security & STD_WPA2)
-			{
-				if (ap_cur->security & AUTH_SAE || ap_cur->security & AUTH_OWE)
-					msg_off += sprintf(msg + msg_off,   " WPA3");
-				msg_off += sprintf(msg + msg_off,   " WPA2");
-			}
-			if (ap_cur->security & STD_WPA) msg_off += sprintf(msg + msg_off,   " WPA");
-			if (ap_cur->security & STD_WEP) msg_off += sprintf(msg + msg_off,   " WEP");
-			if (ap_cur->security & STD_OPN) msg_off += sprintf(msg + msg_off,   " OPN");
-		}
-
-		msg_off += sprintf(msg + msg_off,   ",");
-
-		if ((ap_cur->security & ENC_FIELD) == 0)
-			msg_off += sprintf(msg + msg_off,   " ");
-		else
-		{
-			if (ap_cur->security & ENC_CCMP) msg_off += sprintf(msg + msg_off,   " CCMP");
-			if (ap_cur->security & ENC_WRAP) msg_off += sprintf(msg + msg_off,   " WRAP");
-			if (ap_cur->security & ENC_TKIP) msg_off += sprintf(msg + msg_off,   " TKIP");
-			if (ap_cur->security & ENC_WEP104) msg_off += sprintf(msg + msg_off,   " WEP104");
-			if (ap_cur->security & ENC_WEP40) msg_off += sprintf(msg + msg_off,   " WEP40");
-			if (ap_cur->security & ENC_WEP) msg_off += sprintf(msg + msg_off,   " WEP");
-			if (ap_cur->security & ENC_GCMP) msg_off += sprintf(msg + msg_off,   " GCMP");
-			if (ap_cur->security & ENC_GMAC) msg_off += sprintf(msg + msg_off,   " GMAC");
-		}
-
-		msg_off += sprintf(msg + msg_off,   ",");
-
-		if ((ap_cur->security & AUTH_FIELD) == 0)
-			msg_off += sprintf(msg + msg_off,   "   ");
-		else
-		{
-			if (ap_cur->security & AUTH_SAE) msg_off += sprintf(msg + msg_off,   " SAE");
-			if (ap_cur->security & AUTH_MGT) msg_off += sprintf(msg + msg_off,   " MGT");
-			if (ap_cur->security & AUTH_CMAC) msg_off += sprintf(msg + msg_off,   " CMAC");
-			if (ap_cur->security & AUTH_PSK)
-			{
-				if (ap_cur->security & STD_WEP)
-					msg_off += sprintf(msg + msg_off,   " SKA");
-				else
-					msg_off += sprintf(msg + msg_off,   " PSK");
-			}
-			if (ap_cur->security & AUTH_OWE) msg_off += sprintf(msg + msg_off,   " OWE");
-			if (ap_cur->security & AUTH_OPN) msg_off += sprintf(msg + msg_off,   " OPN");
-		}
-
-		msg_off += sprintf(msg + msg_off,  
-				", %3d, %8lu, %8lu, ",
-				ap_cur->avg_power,
-				ap_cur->nb_bcn,
-				ap_cur->nb_data);
-
-		msg_off += sprintf(msg + msg_off,  
-				"%3d.%3d.%3d.%3d, ",
-				ap_cur->lanip[0],
-				ap_cur->lanip[1],
-				ap_cur->lanip[2],
-				ap_cur->lanip[3]);
-
-		msg_off += sprintf(msg + msg_off,   "%3d, ", ap_cur->ssid_length);
-
+		// ESSID
 		if (verifyssid(ap_cur->essid))
-			msg_off += sprintf(msg + msg_off,   "%s, ", ap_cur->essid);
+			msg_off += sprintf(msg + msg_off, "\"essid\": \"%s\"", ap_cur->essid);
 		else
 		{
 			temp = format_text_for_csv(ap_cur->essid,
 									   (size_t) ap_cur->ssid_length);
 			if (temp != NULL) //-V547
 			{
-				msg_off += sprintf(msg + msg_off,   "%s, ", temp);
+				msg_off += sprintf(msg + msg_off, "\"essid\": \"%s\"", temp);
 				free(temp);
 			}
 		}
-
-		if (ap_cur->key != NULL)
-		{
-			const int key_len = strlen(ap_cur->key);
-
-			for (i = 0; i < key_len; i++)
-			{
-				msg_off += sprintf(msg + msg_off,   "%02X", ap_cur->key[i]);
-				if (i < (key_len - 1)) msg_off += sprintf(msg + msg_off,   ":");
-			}
-		}
-
-		msg_off += sprintf(msg + msg_off,   "\r\n");
+		msg_off += sprintf(msg + msg_off, "}\r\n");
 
 		ap_cur = ap_cur->next;
+
+		printf(msg);
+		fflush(stdout);
+		udp_send_string(msg);
 	}
-
-	/*msg_off += sprintf(msg + msg_off,  
-			"\r\nStation MAC, First time seen, Last time seen, "
-			"Power, # packets, BSSID, Probed ESSIDs\r\n");
-
-	st_cur = st_1st;
-
-	while (st_cur != NULL)
-	{
-		ap_cur = st_cur->base;
-
-		if (ap_cur->nb_pkt < 2)
-		{
-			st_cur = st_cur->next;
-			continue;
-		}
-
-		msg_off += sprintf(msg + msg_off,  
-				"%02X:%02X:%02X:%02X:%02X:%02X, ",
-				st_cur->stmac[0],
-				st_cur->stmac[1],
-				st_cur->stmac[2],
-				st_cur->stmac[3],
-				st_cur->stmac[4],
-				st_cur->stmac[5]);
-
-		ltime = localtime(&st_cur->tinit);
-		REQUIRE(ltime != NULL);
-
-		msg_off += sprintf(msg + msg_off,  
-				"%04d-%02d-%02d %02d:%02d:%02d, ",
-				1900 + ltime->tm_year,
-				1 + ltime->tm_mon,
-				ltime->tm_mday,
-				ltime->tm_hour,
-				ltime->tm_min,
-				ltime->tm_sec);
-
-		ltime = localtime(&st_cur->tlast);
-		REQUIRE(ltime != NULL);
-
-		msg_off += sprintf(msg + msg_off,  
-				"%04d-%02d-%02d %02d:%02d:%02d, ",
-				1900 + ltime->tm_year,
-				1 + ltime->tm_mon,
-				ltime->tm_mday,
-				ltime->tm_hour,
-				ltime->tm_min,
-				ltime->tm_sec);
-
-		msg_off += sprintf(msg + msg_off,   "%3d, %8lu, ", st_cur->power, st_cur->nb_pkt);
-
-		if (!memcmp(ap_cur->bssid, BROADCAST, 6))
-			msg_off += sprintf(msg + msg_off,   "(not associated) ,");
-		else
-			msg_off += sprintf(msg + msg_off,  
-					"%02X:%02X:%02X:%02X:%02X:%02X,",
-					ap_cur->bssid[0],
-					ap_cur->bssid[1],
-					ap_cur->bssid[2],
-					ap_cur->bssid[3],
-					ap_cur->bssid[4],
-					ap_cur->bssid[5]);
-
-		probes_written = 0;
-		for (i = 0; i < NB_PRB; i++)
-		{
-			if (st_cur->ssid_length[i] == 0) continue;
-
-			if (verifyssid((const unsigned char *) st_cur->probes[i]))
-			{
-				temp = (char *) calloc(
-					1, (st_cur->ssid_length[i] + 1) * sizeof(char));
-				ALLEGE(temp != NULL);
-				memcpy(temp, st_cur->probes[i], st_cur->ssid_length[i] + 1u);
-			}
-			else
-			{
-				temp = format_text_for_csv((unsigned char *) st_cur->probes[i],
-										   (size_t) st_cur->ssid_length[i]);
-				ALLEGE(temp != NULL); //-V547
-			}
-
-			if (probes_written == 0)
-			{
-				msg_off += sprintf(msg + msg_off,   "%s", temp);
-				probes_written = 1;
-			}
-			else
-			{
-				msg_off += sprintf(msg + msg_off,   ",%s", temp);
-			}
-
-			free(temp);
-		}
-
-		msg_off += sprintf(msg + msg_off,   "\r\n");
-
-		st_cur = st_cur->next;
-	}
-
-	msg_off += sprintf(msg + msg_off,   "\r\n");
-	fflush(opt.f_txt);
-	*/
-
-	printf(msg);
-	fflush(stdout);
-	udp_send_string(msg);
 
 	return (0);
 }
